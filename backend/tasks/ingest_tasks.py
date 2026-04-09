@@ -33,9 +33,6 @@ def ingest_text(self, file_path: str, filename: str) -> dict:
         ids = ingestor.store(chunks, vectors)
 
         return {"status": "success", "chunks_stored": len(ids), "filename": filename}
-    except Exception as exc:
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
-        raise exc
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -55,9 +52,6 @@ def ingest_image(self, file_path: str, filename: str) -> dict:
         ids = ingestor.store(chunks, vectors)
 
         return {"status": "success", "chunks_stored": len(ids), "filename": filename}
-    except Exception as exc:
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
-        raise exc
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -79,9 +73,6 @@ def ingest_audio(self, file_path: str, filename: str) -> dict:
         ids = ingestor.store(chunks, vectors)
 
         return {"status": "success", "chunks_stored": len(ids), "filename": filename}
-    except Exception as exc:
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
-        raise exc
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -114,9 +105,6 @@ def ingest_video(self, file_path: str, filename: str) -> dict:
             "frame_chunks": len(frame_chunks),
             "filename": filename,
         }
-    except Exception as exc:
-        self.update_state(state="FAILURE", meta={"error": str(exc)})
-        raise exc
     finally:
         for path in [file_path]:
             if path and os.path.exists(path):

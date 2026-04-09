@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_host: str = "qdrant"
     qdrant_port: int = 6333
+    # Drop & recreate collections when dim ≠ CLIP (e.g. after switching from OpenAI 1536 → CLIP 512)
+    qdrant_recreate_on_dim_mismatch: bool = True
 
     # Redis / Celery
     redis_url: str = "redis://redis:6379/0"
