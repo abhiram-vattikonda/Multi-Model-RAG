@@ -1,0 +1,43 @@
+
+setuptools>=65.0.0
+wheel>=0.40.0
+
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+pydantic==2.7.1
+pydantic-settings==2.3.1
+
+# Vector DB
+qdrant-client==1.9.1
+
+# Redis + Celery
+redis==5.0.4
+celery==5.4.0
+flower==2.0.1
+
+# Embeddings
+openai==1.30.1
+transformers==4.41.2
+torch==2.3.1
+Pillow==10.3.0
+ftfy==6.2.0
+regex==2024.5.15
+
+# Audio / Video processing
+openai-whisper==20231117
+moviepy==1.0.3
+pydub==0.25.1
+
+# PDF / text
+pypdf==4.2.0
+python-magic==0.4.27
+
+# LLM router
+litellm==1.40.10
+
+# Utilities
+httpx==0.27.0
+python-dotenv==1.0.1
+aiofiles==23.2.1
+numpy==1.26.4
