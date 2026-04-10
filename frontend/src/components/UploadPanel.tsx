@@ -45,7 +45,7 @@ export default function UploadPanel() {
       if (status.status === 'SUCCESS' || status.status === 'FAILURE') {
         clearInterval(interval)
       }
-    }, 1500)
+    }, 10000)
   }, [])
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
