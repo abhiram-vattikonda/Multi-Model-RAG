@@ -125,6 +125,23 @@ class VectorStore:
         all_results.sort(key=lambda x: x["score"], reverse=True)
         return all_results[:top_k]
 
+    def search_grouped(
+        self,
+        collections: list[str],
+        query_vectors: dict[str, list[float]],
+        top_k: int = 5,
+        score_threshold: float = 0.0,
+    ) -> dict[str, list[dict]]:
+        grouped: dict[str, list[dict]] = {}
+        for col in collections:
+            if col not in query_vectors:
+                continue
+            hits = self.search(col, query_vectors[col], top_k=top_k, score_threshold=score_threshold)
+            for h in hits:
+                h["collection"] = col
+            grouped[col] = hits
+        return grouped
+
 
 _vs: VectorStore | None = None
 

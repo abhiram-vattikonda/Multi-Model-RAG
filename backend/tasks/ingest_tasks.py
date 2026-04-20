@@ -87,8 +87,12 @@ def ingest_video(self, file_path: str, filename: str) -> dict:
         self.update_progress(1, 5, "Extracting audio track...")
         audio_path = ingestor.extract_audio(file_path)
 
-        self.update_progress(2, 5, "Transcribing with Whisper...")
-        transcript_chunks = ingestor.transcribe(audio_path, filename)
+        if audio_path:
+            self.update_progress(2, 5, "Transcribing with Whisper...")
+            transcript_chunks = ingestor.transcribe(audio_path, filename)
+        else:
+            self.update_progress(2, 5, "No audio track found; skipping transcription...")
+            transcript_chunks = []
 
         self.update_progress(3, 5, "Extracting and encoding keyframes with CLIP...")
         frame_chunks = ingestor.extract_keyframes(file_path, filename)

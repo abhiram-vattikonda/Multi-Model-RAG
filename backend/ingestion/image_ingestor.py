@@ -1,4 +1,6 @@
 from __future__ import annotations
+import base64
+import mimetypes
 from PIL import Image
 from embeddings.clip_encoder import embed_image_pil, get_embedding_dimension
 from vector_store.qdrant_client import vector_store
@@ -8,12 +10,17 @@ class ImageIngestor:
     def extract_chunks(self, file_path: str, filename: str) -> list[dict]:
         image = Image.open(file_path).convert("RGB")
         w, h = image.size
+        with open(file_path, "rb") as f:
+            image_base64 = base64.b64encode(f.read()).decode("ascii")
+        mime_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
         return [{
             "content": f"Image: {filename} ({w}x{h}px)",
             "source_file": filename,
             "media_type": "image",
             "chunk_index": 0,
             "image_path": file_path,
+            "image_base64": image_base64,
+            "image_mime_type": mime_type,
             "_image": image,   # temp, stripped before storing
         }]
 

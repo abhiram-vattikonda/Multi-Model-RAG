@@ -22,17 +22,27 @@ const COLORS: Record<MediaType, string> = {
   text:  'text-ink-300 bg-ink-700 border-ink-600',
 }
 
-function scoreColor(score: number): string {
-  if (score >= 0.7) return 'text-acid'
-  if (score >= 0.5) return 'text-violet-soft'
-  return 'text-ink-400'
-}
-
 function formatTimestamp(s?: number): string {
   if (s == null) return ''
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+function inferImageMime(base64?: string, declaredMime?: string): string {
+  if (declaredMime) return declaredMime
+  if (!base64) return 'image/jpeg'
+  if (base64.startsWith('/9j/')) return 'image/jpeg'
+  if (base64.startsWith('iVBOR')) return 'image/png'
+  if (base64.startsWith('R0lGOD')) return 'image/gif'
+  if (base64.startsWith('UklGR')) return 'image/webp'
+  return 'image/jpeg'
+}
+
+function imageSrc(chunk: RetrievedChunk): string | null {
+  if (!chunk.metadata.image_base64) return null
+  const mime = inferImageMime(chunk.metadata.image_base64, chunk.metadata.image_mime_type)
+  return `data:${mime};base64,${chunk.metadata.image_base64}`
 }
 
 export default function RetrievalViewer({ chunks, loading }: Props) {
@@ -72,15 +82,19 @@ export default function RetrievalViewer({ chunks, loading }: Props) {
               {ICONS[chunk.metadata.media_type]}
               {chunk.metadata.media_type}
             </span>
-            <span className="text-xs text-ink-400 font-mono truncate flex-1">
+            <span className="text-xs text-ink-400 font-mono truncate">
               {chunk.metadata.source_file}
-            </span>
-            <span className={clsx('text-xs font-mono font-medium tabular-nums', scoreColor(chunk.score))}>
-              {(chunk.score * 100).toFixed(1)}%
             </span>
           </div>
 
           {/* Content */}
+          {imageSrc(chunk) && (
+            <img
+              src={imageSrc(chunk)!}
+              alt={chunk.metadata.source_file}
+              className="mb-3 max-h-56 w-full rounded-lg object-cover border border-ink-700"
+            />
+          )}
           <p className="text-xs text-ink-200 leading-relaxed line-clamp-3">{chunk.content}</p>
 
           {/* Footer: timestamps / page */}

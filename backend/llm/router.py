@@ -19,8 +19,13 @@ _PROVIDER_PREFIX = {
 
 
 def _get_model() -> str:
-    prefix = _PROVIDER_PREFIX.get(settings.llm_provider, "")
     model = settings.llm_model
+    for existing_prefix in _PROVIDER_PREFIX.values():
+        if existing_prefix and model.startswith(existing_prefix):
+            if settings.llm_provider == "ollama":
+                litellm.api_base = settings.ollama_base_url
+            return model
+    prefix = _PROVIDER_PREFIX.get(settings.llm_provider, "")
     if settings.llm_provider == "ollama":
         litellm.api_base = settings.ollama_base_url
     return f"{prefix}{model}"
@@ -33,15 +38,47 @@ DEFAULT_SYSTEM = (
 )
 
 
+def _supports_vision() -> bool:
+    model = _get_model().lower()
+    return "llama-4-scout" in model
+
+
+def _chunk_image_data_url(chunk: dict) -> str | None:
+    payload = chunk.get("payload", chunk)
+    image_base64 = payload.get("image_base64")
+    if not image_base64:
+        return None
+    mime_type = payload.get("image_mime_type") or "image/jpeg"
+    return f"data:{mime_type};base64,{image_base64}"
+
+
+def _build_user_content(query: str, context_chunks: list[dict]) -> str | list[dict]:
+    context = _build_context(context_chunks)
+    prompt = f"Context:\n{context}\n\nQuestion: {query}"
+    if not _supports_vision():
+        return prompt
+
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    image_count = 0
+    for chunk in context_chunks:
+        image_url = _chunk_image_data_url(chunk)
+        if not image_url:
+            continue
+        content.append({"type": "image_url", "image_url": {"url": image_url}})
+        image_count += 1
+        if image_count >= 5:
+            break
+    return content
+
+
 async def generate_stream(
     query: str,
     context_chunks: list[dict],
     system_prompt: str | None = None,
 ) -> AsyncIterator[str]:
-    context = _build_context(context_chunks)
     messages = [
         {"role": "system", "content": system_prompt or DEFAULT_SYSTEM},
-        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"},
+        {"role": "user", "content": _build_user_content(query, context_chunks)},
     ]
     response = await litellm.acompletion(
         model=_get_model(),
@@ -60,10 +97,9 @@ async def generate(
     context_chunks: list[dict],
     system_prompt: str | None = None,
 ) -> str:
-    context = _build_context(context_chunks)
     messages = [
         {"role": "system", "content": system_prompt or DEFAULT_SYSTEM},
-        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"},
+        {"role": "user", "content": _build_user_content(query, context_chunks)},
     ]
     response = await litellm.acompletion(
         model=_get_model(),

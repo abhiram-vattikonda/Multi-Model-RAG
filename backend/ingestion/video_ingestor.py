@@ -1,4 +1,7 @@
 from __future__ import annotations
+import base64
+import io
+import mimetypes
 import os
 import tempfile
 import whisper
@@ -20,14 +23,20 @@ KEYFRAME_INTERVAL = 5   # extract a frame every N seconds
 
 
 class VideoIngestor:
-    def extract_audio(self, video_path: str) -> str:
+    def extract_audio(self, video_path: str) -> str | None:
         tmp = tempfile.mktemp(suffix=".mp3")
         clip = VideoFileClip(video_path)
-        clip.audio.write_audiofile(tmp, logger=None)
-        clip.close()
-        return tmp
+        try:
+            if clip.audio is None:
+                return None
+            clip.audio.write_audiofile(tmp, logger=None)
+            return tmp
+        finally:
+            clip.close()
 
     def transcribe(self, audio_path: str, filename: str) -> list[dict]:
+        if not audio_path:
+            return []
         model = _get_whisper()
         result = model.transcribe(audio_path, word_timestamps=False)
         chunks = []
@@ -54,6 +63,10 @@ class VideoIngestor:
         for t in range(0, duration, KEYFRAME_INTERVAL):
             frame = clip.get_frame(t)
             pil_img = Image.fromarray(frame)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="JPEG", quality=90)
+            image_base64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            mime_type = mimetypes.guess_type(f"{filename}.jpg")[0] or "image/jpeg"
             chunks.append({
                 "content": f"Video frame at {t}s from {filename}",
                 "source_file": filename,
@@ -62,6 +75,9 @@ class VideoIngestor:
                 "chunk_type": "keyframe",
                 "timestamp_start": float(t),
                 "timestamp_end": float(min(t + KEYFRAME_INTERVAL, duration)),
+                "frame_index": int(t / KEYFRAME_INTERVAL),
+                "image_base64": image_base64,
+                "image_mime_type": mime_type,
                 "_image": pil_img,
             })
         clip.close()

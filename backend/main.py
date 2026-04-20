@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -32,6 +33,11 @@ _TEXT_EXT = {".txt", ".md", ".pdf", ".json", ".csv", ".html", ".htm", ".xml"}
 _IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 _AUDIO_EXT = {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
 _VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "in",
+    "is", "it", "of", "on", "or", "that", "the", "this", "to", "was", "what",
+    "when", "where", "which", "who", "why", "with",
+}
 
 
 def _detect_media_type(filename: str) -> MediaType:
@@ -58,6 +64,116 @@ def _query_vectors(query: str, modalities: list[MediaType]) -> dict[str, list[fl
     return {m.value: q for m in modalities}
 
 
+def _normalize_for_match(text: str) -> str:
+    cleaned = text.lower()
+    cleaned = re.sub(r"\\[a-zA-Z]+", " ", cleaned)
+    cleaned = re.sub(r"[^a-z0-9\s]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _query_terms(query: str) -> list[str]:
+    terms = []
+    for token in _normalize_for_match(query).split():
+        if len(token) < 2 or token in _STOPWORDS:
+            continue
+        terms.append(token)
+    return terms
+
+
+def _term_variants(term: str) -> set[str]:
+    variants = {term}
+    if term.endswith("ies") and len(term) > 3:
+        variants.add(term[:-3] + "y")
+    if term.endswith("es") and len(term) > 3:
+        variants.add(term[:-2])
+    if term.endswith("s") and len(term) > 3:
+        variants.add(term[:-1])
+    else:
+        variants.add(term + "s")
+        variants.add(term + "es")
+    return {v for v in variants if len(v) >= 3}
+
+
+def _is_text_like_hit(hit: dict) -> bool:
+    payload = hit.get("payload") or {}
+    media_type = payload.get("media_type")
+    if media_type in {"text", "audio"}:
+        return True
+    return media_type == "video" and payload.get("chunk_type") == "transcript"
+
+
+def _lexical_score(query: str, hit: dict) -> float:
+    terms = _query_terms(query)
+    if not terms:
+        return 0.0
+
+    payload = hit.get("payload") or {}
+    haystack = _normalize_for_match(
+        f"{payload.get('content', '')} {payload.get('source_file', '')}"
+    )
+    if not haystack:
+        return 0.0
+
+    haystack_tokens = set(haystack.split())
+    matched = 0
+    for term in terms:
+        variants = _term_variants(term)
+        if any(variant in haystack_tokens for variant in variants):
+            matched += 1
+            continue
+        if any(re.search(rf"\b{re.escape(variant)}\b", haystack) for variant in variants):
+            matched += 1
+
+    coverage = matched / len(terms)
+    normalized_query = _normalize_for_match(query)
+    phrase = 1.0 if re.search(rf"\b{re.escape(normalized_query)}\b", haystack) else 0.0
+    return max(coverage, phrase)
+
+
+def _reranked_score(query: str, hit: dict) -> float:
+    raw_score = float(hit.get("score", 0.0))
+    if not _is_text_like_hit(hit):
+        return raw_score
+
+    if not _query_terms(query):
+        return raw_score
+
+    lexical = _lexical_score(query, hit)
+    if lexical <= 0.0:
+        return raw_score * 0.1
+    return (0.7 * lexical) + (0.3 * raw_score)
+
+
+def _search_hits(
+    query: str,
+    modalities: list[MediaType],
+    top_k: int,
+    score_threshold: float,
+) -> list[dict]:
+    collections = [m.value for m in modalities]
+    q_vecs = _query_vectors(query, modalities)
+    grouped_hits = vector_store.search_grouped(
+        collections=collections,
+        query_vectors=q_vecs,
+        top_k=max(top_k * 5, 10),
+        score_threshold=0.0,
+    )
+
+    hits: list[dict] = []
+    for col in collections:
+        hits.extend(grouped_hits.get(col, []))
+
+    for hit in hits:
+        hit["raw_score"] = float(hit.get("score", 0.0))
+        hit["score"] = _reranked_score(query, hit)
+
+    hits.sort(key=lambda h: h["score"], reverse=True)
+    if score_threshold > 0.0:
+        hits = [h for h in hits if float(h["score"]) >= score_threshold]
+    return hits[:top_k]
+
+
 def _hit_to_retrieved(hit: dict) -> RetrievedChunk:
     payload = hit.get("payload") or {}
     raw_mt = payload.get("media_type", "text")
@@ -70,6 +186,9 @@ def _hit_to_retrieved(hit: dict) -> RetrievedChunk:
         timestamp_end=payload.get("timestamp_end"),
         page_number=payload.get("page_number"),
         frame_index=payload.get("frame_index"),
+        image_path=payload.get("image_path"),
+        image_base64=payload.get("image_base64"),
+        image_mime_type=payload.get("image_mime_type"),
     )
     return RetrievedChunk(
         id=str(hit["id"]),
@@ -186,11 +305,9 @@ def api_task(task_id: str):
 
 @app.post("/api/retrieve", response_model=RetrievalResponse)
 def api_retrieve(body: RetrievalRequest):
-    collections = [m.value for m in body.modalities]
-    q_vecs = _query_vectors(body.query, body.modalities)
-    hits = vector_store.search_many(
-        collections=collections,
-        query_vectors=q_vecs,
+    hits = _search_hits(
+        query=body.query,
+        modalities=body.modalities,
         top_k=body.top_k,
         score_threshold=body.score_threshold,
     )
@@ -204,13 +321,11 @@ def api_retrieve(body: RetrievalRequest):
 
 @app.post("/api/generate")
 async def api_generate(body: GenerateRequest):
-    collections = [m.value for m in body.modalities]
-    q_vecs = _query_vectors(body.query, body.modalities)
-    hits = vector_store.search_many(
-        collections=collections,
-        query_vectors=q_vecs,
+    hits = _search_hits(
+        query=body.query,
+        modalities=body.modalities,
         top_k=body.top_k,
-        score_threshold=0.3,
+        score_threshold=body.score_threshold,
     )
     chunks_context = hits
     info = get_provider_info()

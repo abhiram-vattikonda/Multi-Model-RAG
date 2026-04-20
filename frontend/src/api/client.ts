@@ -26,6 +26,9 @@ export interface ChunkMetadata {
   timestamp_end?: number
   page_number?: number
   frame_index?: number
+  image_path?: string
+  image_base64?: string
+  image_mime_type?: string
 }
 
 export interface RetrievedChunk {
@@ -45,6 +48,7 @@ export interface GenerateRequest {
   query: string
   top_k?: number
   modalities?: MediaType[]
+  score_threshold?: number
   stream?: boolean
   system_prompt?: string
 }
@@ -71,7 +75,7 @@ export async function retrieveChunks(
   query: string,
   topK = 5,
   modalities: MediaType[] = ['text', 'image', 'audio', 'video'],
-  scoreThreshold = 0.3
+  scoreThreshold = 0.0
 ): Promise<RetrievalResponse> {
   const res = await fetch(`${BASE}/retrieve`, {
     method: 'POST',

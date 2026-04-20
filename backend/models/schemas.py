@@ -36,7 +36,7 @@ class RetrievalRequest(BaseModel):
     modalities: list[MediaType] = Field(
         default=[MediaType.text, MediaType.image, MediaType.audio, MediaType.video]
     )
-    score_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    score_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class ChunkMetadata(BaseModel):
@@ -47,6 +47,9 @@ class ChunkMetadata(BaseModel):
     timestamp_end: Optional[float] = None
     page_number: Optional[int] = None          # for PDF
     frame_index: Optional[int] = None          # for video keyframes
+    image_path: Optional[str] = None
+    image_base64: Optional[str] = None
+    image_mime_type: Optional[str] = None
 
 
 class RetrievedChunk(BaseModel):
@@ -70,6 +73,7 @@ class GenerateRequest(BaseModel):
     modalities: list[MediaType] = Field(
         default=[MediaType.text, MediaType.image, MediaType.audio, MediaType.video]
     )
+    score_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
     stream: bool = True
     system_prompt: Optional[str] = None
 
